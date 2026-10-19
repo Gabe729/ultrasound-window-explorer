@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ultrasound Window Explorer</title>
+  <meta name="description" content="Interactive 3D anatomy explorer showing which structures diagnostic ultrasound can reach from each point on the skin. Educational, not a diagnostic tool.">
+  <link rel="stylesheet" href="styles.css">
+  <script type="importmap">
+  {"imports": {
+    "three": "./vendor/three.module.js",
+    "three/addons/": "./vendor/addons/",
+    "three-mesh-bvh": "./vendor/three-mesh-bvh.module.js"
+  }}
+  </script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" class="logo" aria-hidden="true"><path d="M16 4 L5 26 Q16 31 27 26 Z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 4 L11 26 M16 4 L21 26" stroke="currentColor" stroke-width="1" opacity=".5"/></svg>
+    <div>
+      <h1>Ultrasound Window Explorer</h1>
+      <p>Which structures can sound reach from this point on the skin?</p>
+    </div>
+  </div>
+  <div class="provenance" aria-label="Provenance key">
+    <span class="chip geo" title="Anatomical geometry from BodyParts3D 4.0 (simplified, otherwise unedited)">Geometry · BodyParts3D</span>
+    <span class="chip derived" title="Structures BodyParts3D does not model, reconstructed approximately">Derived · approximate</span>
+    <span class="chip computed" title="Computed from geometry and the tissue table along straight rays">Computed · ray model</span>
+    <span class="chip approx" title="Thresholds and display choices made for intuition, not measured">Educational approximation</span>
+  </div>
+  <div class="top-actions">
+    <button id="btn-model" class="ghost">Model &amp; assumptions</button>
+    <button id="btn-help" class="ghost">How to use</button>
+    <span class="disclaimer">Educational · not a diagnostic tool</span>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="panel left" id="left">
+    <details open class="sec">
+      <summary>Acoustic window presets</summary>
+      <div id="presets" class="presets"></div>
+    </details>
+    <details open class="sec">
+      <summary>Probe</summary>
+      <div class="seg" id="probe-type"></div>
+      <p class="hint" id="probe-use"></p>
+      <label class="slider"><span>Frequency</span><input id="f" type="range" step="0.5"><output id="f-out"></output></label>
+      <label class="slider"><span>Imaging depth</span><input id="depth" type="range" min="1" max="30" step="0.5"><output id="depth-out"></output></label>
+      <label class="slider"><span id="angle-label">Angle</span><input id="angle" type="range" step="1"><output id="angle-out"></output></label>
+      <div class="subhead">Orientation <span class="kbd">Q/E W/S A/D</span></div>
+      <label class="slider"><span title="Rotation about the beam axis: turns the imaging plane">Rotate plane</span><input id="rot" type="range" min="-180" max="180" step="1"><output id="rot-out"></output></label>
+      <label class="slider"><span title="Fan the beam out of the imaging plane (elevational tilt)">Tilt (fan)</span><input id="tilt" type="range" min="-60" max="60" step="1"><output id="tilt-out"></output></label>
+      <label class="slider"><span title="Rock the beam within the imaging plane (heel–toe)">Rock (heel–toe)</span><input id="rock" type="range" min="-60" max="60" step="1"><output id="rock-out"></output></label>
+      <div class="row">
+        <button id="btn-place" class="toggle" title="Then drag on the skin. Shift-drag works at any time.">Move probe</button>
+        <button id="btn-perp" title="Make the beam perpendicular to the skin">Perpendicular</button>
+        <button id="btn-best" title="Search nearby skin for the best view of the selected structure">Find best window</button>
+      </div>
+      <label class="check"><input type="checkbox" id="volume"> 3D volume sweep</label>
+      <label class="slider" id="sweep-row"><span>Sweep angle</span><input id="sweep" type="range" min="10" max="60" step="1"><output id="sweep-out"></output></label>
+      <div class="readout" id="probe-readout"></div>
+    </details>
+    <details open class="sec">
+      <summary>Physiological state</summary>
+      <label class="slider"><span title="Fraction of bowel lumen holding gas pockets (educational noise field)">Bowel gas</span><input id="gas" type="range" min="0" max="100" step="5"><output id="gas-out"></output></label>
+      <label class="check"><input type="checkbox" id="bladder" checked> Bladder full (acoustic window)</label>
+    </details>
+    <details open class="sec">
+      <summary>Display</summary>
+      <div class="seg small" id="color-mode">
+        <button data-v="access">Accessibility colours</button><button data-v="anatomy">Anatomical colours</button>
+      </div>
+      <div class="seg small" id="image-mode">
+        <button data-v="bmode">Pseudo B-mode</button><button data-v="anatomy">Tissue map</button>
+      </div>
+      <div class="seg small" id="clip-mode" title="Cut the anatomy along the imaging plane">
+        <button data-v="off">No cut</button><button data-v="half">Cut at plane</button><button data-v="slab">Slab ±12 mm</button>
+      </div>
+      <label class="check"><input type="checkbox" id="focus" checked> Fade structures outside the beam</label>
+      <label class="check"><input type="checkbox" id="inbeam"> Show only structures in the beam</label>
+      <label class="check"><input type="checkbox" id="labels" checked> Labels</label>
+      <label class="check"><input type="checkbox" id="showplane" checked> Scan plane in 3D</label>
+      <label class="check"><input type="checkbox" id="showslice" checked> Slice-thickness envelope</label>
+      <label class="check"><input type="checkbox" id="showstops" checked> Mark where rays lose signal</label>
+      <label class="check"><input type="checkbox" id="showimage" checked> Cross-section panel</label>
+    </details>
+    <details open class="sec">
+      <summary>Anatomical systems</summary>
+      <div class="row tight">
+        <button id="sys-all" class="ghost small">All</button>
+        <button id="sys-organs" class="ghost small">Organs &amp; vessels</button>
+        <button id="sys-bones" class="ghost small">Skeleton</button>
+      </div>
+      <div id="systems" class="systems"></div>
+    </details>
+    <p class="credit">Anatomy: BodyParts3D 4.0 © DBCLS, CC BY 4.0, via Human Atlas (MIT). See Model &amp; assumptions.</p>
+  </aside>
+
+  <section class="viewport" id="viewport">
+    <canvas id="three"></canvas>
+    <svg id="leaders" class="leaders"></svg>
+    <div id="labels3d" class="labels3d"></div>
+    <div class="hud tl" id="hud">Drag to orbit · scroll to zoom · <b>Shift-drag on the skin</b> to move the probe · click a structure to inspect</div>
+    <div class="legend" id="legend"></div>
+    <div class="imagepanel" id="imagepanel">
+      <div class="ip-head">
+        <span>Imaging plane</span>
+        <span class="ip-meta" id="ip-meta"></span>
+      </div>
+      <canvas id="image2d"></canvas>
+      <div class="ip-foot" id="ip-hover">Hover the image to read tissue, depth and signal margin.</div>
+    </div>
+    <div class="loading" id="loading">
+      <div class="ld-box">
+        <div class="ld-title">Preparing anatomy</div>
+        <div class="ld-bar"><div id="ld-fill"></div></div>
+        <div class="ld-msg" id="ld-msg">Loading…</div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel right" id="right">
+    <div class="tabs">
+      <button data-tab="beam" class="active">In the beam</button>
+      <button data-tab="structure">Structure</button>
+    </div>
+    <div class="tab" id="tab-beam">
+      <div class="card" id="summary"></div>
+      <div class="card" id="measurable"></div>
+      <div id="list"></div>
+    </div>
+    <div class="tab hidden" id="tab-structure">
+      <div id="structure" class="card"><p class="muted">Click a structure in the 3D view or in the list to see how ultrasound can image it.</p></div>
+    </div>
+  </aside>
+</main>
+
+<dialog id="dlg-model" class="dlg"><div class="dlg-body" id="model-body"></div><form method="dialog"><button>Close</button></form></dialog>
+<dialog id="dlg-help" class="dlg"><div class="dlg-body" id="help-body"></div><form method="dialog"><button>Close</button></form></dialog>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
